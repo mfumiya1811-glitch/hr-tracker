@@ -184,3 +184,4 @@ td.rule{white-space:normal;max-width:280px}
 .gate .panel-body{padding:32px}
 .gate-title{margin:0 0 12px;font-size:18px}
 .tabs[hidden]{display:none!important}
+.sep{border:0;border-top:1px solid var(--border);margin:18px 0}

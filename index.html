@@ -88,11 +88,30 @@
           <input type="email" id="gateEmail" placeholder="you@example.com"></div>
       </div>
       <div class="form-actions">
-        <button class="btn btn-primary" id="gateSend">ログインリンクを送る</button>
+        <button class="btn btn-primary" id="gateSend">ログイン用メールを送る</button>
         <span class="form-msg" id="gateMsg"></span>
       </div>
+
+      <div id="gateCodeRow" hidden>
+        <hr class="sep">
+        <p class="hint">
+          メールが届いたら、<strong>リンクを押す</strong>か、
+          メール本文の<strong>6桁の数字</strong>を下に入れてください。
+          どちらでもログインできます。
+        </p>
+        <div class="form-grid" style="max-width:420px">
+          <div class="field"><label for="gateCode">メールに書かれた6桁の数字</label>
+            <input id="gateCode" inputmode="numeric" autocomplete="one-time-code"
+                   maxlength="6" placeholder="123456"></div>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-primary" id="gateVerify">この数字でログイン</button>
+          <span class="form-msg" id="gateCodeMsg"></span>
+        </div>
+      </div>
+
       <p class="hint" style="margin-top:12px">
-        パスワードはありません。入力したアドレスに一度きりのリンクが届きます。
+        パスワードはありません。一度ログインすれば、このブラウザではログイン状態が保たれます。
       </p>
     </div>
   </section>
@@ -498,16 +517,55 @@ function renderCompanies(){
 
 function renderAll(){ renderList(); renderReview(); renderCompanies(); applyGate(); }
 
-/** ログインリンク送信（ヘッダーの認証欄と、未ログイン案内の両方で使う） */
-async function sendMagicLink(email, msgEl){
+/** Supabase のエラーを、原因が分かる日本語にして返す */
+function authErrorText(error){
+  const m = String(error && error.message || '');
+  if (/rate limit|too many|429/i.test(m)){
+    return 'メールの送信回数の上限に達しました。Supabase の標準メール機能は1時間あたり数通までです。'
+         + '1時間ほど待つか、前回届いたメールの6桁の数字をお使いください。';
+  }
+  if (/redirect|not allowed/i.test(m)){
+    return '戻り先URLが Supabase に登録されていません。'
+         + 'Authentication → URL Configuration に このページのURL を追加してください。'
+         + '（6桁の数字での入力なら、登録なしでもログインできます）';
+  }
+  if (/expired|invalid/i.test(m)){
+    return 'このリンク／数字は期限切れか、すでに使用済みです。もう一度メールを送ってください。';
+  }
+  return '失敗：' + m;
+}
+
+/** ログイン用メールを送る（リンクと6桁コードの両方が届く） */
+async function sendMagicLink(email, msgEl, codeRowEl){
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){
     msgEl.textContent = 'メールアドレスの形式が違います。'; msgEl.className = 'form-msg error'; return;
   }
   if (!sb){ msgEl.textContent = '先に「接続設定」を行ってください。'; msgEl.className = 'form-msg error'; return; }
   msgEl.textContent = '送信中…'; msgEl.className = 'form-msg';
-  const { error } = await sb.auth.signInWithOtp({ email, options:{ emailRedirectTo: location.origin + location.pathname } });
-  msgEl.textContent = error ? ('失敗：' + error.message) : 'ログインリンクを送りました。メールをご確認ください。';
-  msgEl.className = 'form-msg' + (error ? ' error' : '');
+  const { error } = await sb.auth.signInWithOtp({
+    email, options:{ emailRedirectTo: location.origin + location.pathname }
+  });
+  if (error){
+    msgEl.textContent = authErrorText(error); msgEl.className = 'form-msg error';
+  } else {
+    msgEl.textContent = 'メールを送りました。'; msgEl.className = 'form-msg';
+  }
+  // 送信が失敗しても、過去に届いたメールの数字は使えるのでコード欄は出す
+  if (codeRowEl) codeRowEl.hidden = false;
+}
+
+/** メールに書かれた6桁の数字でログインする（戻り先URLの設定に依存しない） */
+async function verifyCode(email, token, msgEl){
+  if (!/^\d{6}$/.test(token)){
+    msgEl.textContent = '6桁の数字を入力してください。'; msgEl.className = 'form-msg error'; return;
+  }
+  msgEl.textContent = '確認中…'; msgEl.className = 'form-msg';
+  const { error } = await sb.auth.verifyOtp({ email, token, type: 'email' });
+  if (error){
+    msgEl.textContent = authErrorText(error); msgEl.className = 'form-msg error';
+  } else {
+    msgEl.textContent = 'ログインしました。'; msgEl.className = 'form-msg';
+  }
 }
 
 /* =============================== 画面切替 =============================== */
@@ -599,8 +657,10 @@ $('authBtn').addEventListener('click', async () => {
   $('authPanel').hidden = !$('authPanel').hidden;
 });
 $('authSend').addEventListener('click', () => sendMagicLink($('authEmail').value.trim(), $('authMsg')));
-$('gateSend').addEventListener('click', () => sendMagicLink($('gateEmail').value.trim(), $('gateMsg')));
+$('gateSend').addEventListener('click', () => sendMagicLink($('gateEmail').value.trim(), $('gateMsg'), $('gateCodeRow')));
+$('gateVerify').addEventListener('click', () => verifyCode($('gateEmail').value.trim(), $('gateCode').value.trim(), $('gateCodeMsg')));
 $('gateEmail').addEventListener('keydown', e => { if (e.key === 'Enter') $('gateSend').click(); });
+$('gateCode').addEventListener('keydown', e => { if (e.key === 'Enter') $('gateVerify').click(); });
 
 function setAuthUI(){
   const btn = $('authBtn');
