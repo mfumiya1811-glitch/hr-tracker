@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="ja" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>製薬業界 人事異動トラッカー</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="inner">
+    <div>
+      <h1>製薬業界 人事異動トラッカー</h1>
+      <p id="subtitle">複数社の公式発表から経営層・管理職以上の異動を集約</p>
+    </div>
+    <div class="header-actions">
+      <span class="conn" id="connBadge">未接続</span>
+      <button class="btn btn-ghost" id="authBtn">ログイン</button>
+      <button class="btn btn-ghost" id="settingsBtn">接続設定</button>
+      <button class="btn btn-ghost" id="themeToggle">🌙</button>
+    </div>
+  </div>
+  <nav class="tabs inner">
+    <button class="tab active" data-view="list">異動一覧</button>
+    <button class="tab" data-view="review">レビュー待ち <span class="pill" id="pendingCount">0</span></button>
+    <button class="tab" data-view="companies">企業マスタ</button>
+  </nav>
+</header>
+
+<div class="wrap">
+
+  <!-- ============ 接続設定 ============ -->
+  <section class="panel" id="setupPanel" hidden>
+    <h2>Supabase 接続設定</h2>
+    <div class="panel-body">
+      <p class="hint">
+        <code>config.js</code> を置けば自動で読み込まれます。ここで入力した場合は、
+        このブラウザの localStorage にのみ保存されます（サーバーには送信されません）。
+      </p>
+      <div class="form-grid">
+        <div class="field"><label for="cfgUrl">Project URL</label>
+          <input id="cfgUrl" placeholder="https://xxxx.supabase.co"></div>
+        <div class="field"><label for="cfgKey">anon public キー</label>
+          <input id="cfgKey" placeholder="eyJhbGciOi..."></div>
+      </div>
+      <p class="hint warn">
+        ⚠ <strong>service_role キーは入力しないでください。</strong>
+        RLS を迂回してしまうため、ブラウザに置いてはいけない種類のキーです。
+      </p>
+      <div class="form-actions">
+        <button class="btn btn-primary" id="cfgSave">保存して接続</button>
+        <button class="btn" id="cfgClear">設定を消去</button>
+        <span class="form-msg" id="cfgMsg"></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ ログイン ============ -->
+  <section class="panel" id="authPanel" hidden>
+    <h2>レビュー担当者ログイン</h2>
+    <div class="panel-body">
+      <p class="hint">
+        レビュー待ちの承認・却下にはログインが必要です。パスワードは使いません。
+        入力したアドレスにワンタイムのログインリンクが届きます。
+      </p>
+      <div class="form-grid">
+        <div class="field"><label for="authEmail">メールアドレス</label>
+          <input type="email" id="authEmail" placeholder="you@example.com"></div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" id="authSend">ログインリンクを送る</button>
+        <span class="form-msg" id="authMsg"></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 未ログイン時の案内 ============ -->
+  <section class="panel gate" id="gatePanel" hidden>
+    <div class="panel-body">
+      <h2 class="gate-title">🔒 このデータを見るにはログインが必要です</h2>
+      <p class="hint">
+        製薬業界各社の公式発表から収集した人事異動データベースです。<br>
+        閲覧できるのは許可されたメンバーのみです。
+      </p>
+      <div class="form-grid" style="max-width:420px">
+        <div class="field"><label for="gateEmail">メールアドレス</label>
+          <input type="email" id="gateEmail" placeholder="you@example.com"></div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" id="gateSend">ログインリンクを送る</button>
+        <span class="form-msg" id="gateMsg"></span>
+      </div>
+      <p class="hint" style="margin-top:12px">
+        パスワードはありません。入力したアドレスに一度きりのリンクが届きます。
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ 異動一覧 ============ -->
+  <div id="view-list">
+    <div class="stats">
+      <div class="stat"><div class="label">承認済み件数</div><div class="value" id="statAll">0</div></div>
+      <div class="stat"><div class="label">就任</div><div class="value" id="statIn">0</div></div>
+      <div class="stat"><div class="label">退任</div><div class="value" id="statOut">0</div></div>
+      <div class="stat"><div class="label">対象企業</div><div class="value" id="statCo">0</div></div>
+      <div class="stat"><div class="label">直近の異動日</div><div class="value" id="statLatest">—</div></div>
+    </div>
+
+    <section class="panel">
+      <h2>絞り込み</h2>
+      <div class="panel-body">
+        <div class="filters">
+          <input type="search" id="q" placeholder="企業名・人物名・職位でフリー検索…">
+          <select id="filterCo" style="width:auto;min-width:150px"><option value="">企業：すべて</option></select>
+          <select id="filterType" style="width:auto;min-width:130px"><option value="">種別：すべて</option></select>
+          <select id="filterRank" style="width:auto;min-width:130px"><option value="">階級：すべて</option></select>
+          <button class="btn" id="resetFilter">クリア</button>
+          <button class="btn" id="exportCsv">CSV</button>
+          <button class="btn" id="exportJson">JSON</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>異動一覧 <span id="rowCount" class="muted-inline"></span></h2>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th data-key="company">企業<span class="arrow">▲</span></th>
+              <th data-key="person_name">人物名<span class="arrow">▲</span></th>
+              <th data-key="old_title">旧職位<span class="arrow">▲</span></th>
+              <th data-key="new_title">新職位<span class="arrow">▲</span></th>
+              <th data-key="rank">階級<span class="arrow">▲</span></th>
+              <th data-key="effective_on">異動日<span class="arrow">▲</span></th>
+              <th data-key="announced_on">発表日<span class="arrow">▲</span></th>
+              <th data-key="_lead">経過日数<span class="arrow">▲</span></th>
+              <th data-key="event_type">種別<span class="arrow">▲</span></th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+      <div class="empty" id="emptyMsg" hidden>該当するデータがありません。</div>
+    </section>
+  </div>
+
+  <!-- ============ レビュー待ち ============ -->
+  <div id="view-review" hidden>
+    <section class="panel">
+      <h2>レビュー待ち <span id="reviewCount" class="muted-inline"></span></h2>
+      <div class="panel-body">
+        <p class="hint" id="reviewHint">
+          AI が抽出した候補です。<strong>原文の抜粋と出典URLを必ず確認</strong>してから承認してください。
+          値を直してから承認することもできます。
+        </p>
+        <div id="reviewList"></div>
+      </div>
+    </section>
+  </div>
+
+  <!-- ============ 企業マスタ ============ -->
+  <div id="view-companies" hidden>
+    <section class="panel">
+      <h2>企業マスタ <span id="coCount" class="muted-inline"></span></h2>
+      <div class="panel-body">
+        <p class="hint">
+          巡回対象の一覧です。<strong>取得可否と最終巡回日</strong>を出すことで、
+          「拾えていない企業」が見えるようにしています。
+        </p>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr>
+            <th>企業</th><th>取得可否</th><th>形式</th><th>判定ルール</th>
+            <th>最終巡回</th><th>①NR</th><th>②組織概要</th>
+          </tr></thead>
+          <tbody id="coBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <footer>
+    <span id="footNote">未接続です。デモデータを表示しています。</span><br>
+    出典は各社公式サイト。robots.txt および利用規約で自動アクセスを禁じているソースは対象外です。
+  </footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="config.js" onerror="void 0"></script>
+<script>
+/* =========================================================================
+   製薬業界 人事異動トラッカー（Supabase 版）
+   - 未接続 / 未ログインでも「承認済み」データは読める
+   - レビュー承認は Supabase Auth のログインが必要
+   ========================================================================= */
+
+const $  = id => document.getElementById(id);
+const $$ = sel => document.querySelectorAll(sel);
+const CFG_KEY = 'hrTracker.supabase';
+const THEME_KEY = 'hrTracker.theme';
+
+/* --- 未接続時に表示するデモデータ（GSK・原文検証済み） --- */
+const DEMO = [
+  {company:'グラクソ・スミスクライン',person_name:'高田 清文',old_title:null,new_title:'取締役（法務担当）',old_dept:null,new_dept:null,rank:'取締役',effective_on:'2026-02-01',announced_on:'2026-02-02',event_type:'就任',source_url:'https://jp.gsk.com/ja-jp/news/press-releases/20260202-hr/',source_quote:'就任（2026年2月1日付）取締役（法務担当） 高田 清文'},
+  {company:'グラクソ・スミスクライン',person_name:'小野 典子',old_title:null,new_title:'取締役（人財担当）',old_dept:null,new_dept:null,rank:'取締役',effective_on:'2026-01-01',announced_on:'2026-01-05',event_type:'就任',source_url:'https://jp.gsk.com/ja-jp/news/press-releases/20260105-hr/',source_quote:'就任（2026年1月1日付）取締役（人財担当） 小野 典子'},
+  {company:'グラクソ・スミスクライン',person_name:'隈部 めぐみ',old_title:'取締役（人財担当）',new_title:null,old_dept:null,new_dept:null,rank:'取締役',effective_on:'2025-12-31',announced_on:'2026-01-05',event_type:'退任',source_url:'https://jp.gsk.com/ja-jp/news/press-releases/20260105-hr/',source_quote:'退任（2025年12月31日付）取締役（人財担当） 隈部 めぐみ'},
+  {company:'グラクソ・スミスクライン',person_name:'平泉 真理',old_title:'取締役（法務担当）',new_title:null,old_dept:null,new_dept:null,rank:'取締役',effective_on:'2025-12-31',announced_on:'2026-01-05',event_type:'退任',source_url:'https://jp.gsk.com/ja-jp/news/press-releases/20260105-hr/',source_quote:'退任（2025年12月31日付）取締役（法務担当） 平泉 真理'},
+  {company:'グラクソ・スミスクライン',person_name:'向井 陽美',old_title:'取締役（メディカルアフェアーズ担当）',new_title:null,old_dept:null,new_dept:null,rank:'取締役',effective_on:'2025-12-31',announced_on:'2026-01-05',event_type:'退任',source_url:'https://jp.gsk.com/ja-jp/news/press-releases/20260105-hr/',source_quote:'退任（2025年12月31日付）取締役（メディカルアフェアーズ担当） 向井 陽美'},
+  {company:'グラクソ・スミスクライン',person_name:'志茂 剛',old_title:'取締役（ジェネラルメディスン事業担当）',new_title:null,old_dept:null,new_dept:null,rank:'取締役',effective_on:'2025-08-31',announced_on:'2025-09-04',event_type:'退任',source_url:'https://jp.gsk.com/ja-jp/news/press-releases/20250904-hr/',source_quote:'辞任（2025年8月31日付）取締役（ジェネラルメディスン事業担当） 志茂 剛'}
+];
+
+let sb = null;              // Supabase クライアント
+let session = null;         // ログインセッション
+let events = [];            // 承認済みイベント
+let pending = [];           // レビュー待ち
+let companies = [];         // 企業マスタ
+let view = 'list';
+const state = { sortKey:'effective_on', sortDir:'desc', q:'', co:'', type:'', rank:'' };
+
+/* =============================== 設定 =============================== */
+function readConfig(){
+  if (window.SUPABASE_CONFIG && window.SUPABASE_CONFIG.url && !/xxxx/.test(window.SUPABASE_CONFIG.url)) {
+    return window.SUPABASE_CONFIG;
+  }
+  try {
+    const raw = localStorage.getItem(CFG_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e){ console.warn('設定の読み込みに失敗:', e); }
+  return null;
+}
+
+function initClient(){
+  const cfg = readConfig();
+  if (!cfg || !cfg.url || !cfg.anonKey) { setConn(false); return false; }
+  try {
+    sb = window.supabase.createClient(cfg.url, cfg.anonKey);
+    setConn(true);
+    return true;
+  } catch (e){
+    console.error('Supabase 初期化に失敗:', e);
+    setConn(false);
+    return false;
+  }
+}
+
+function setConn(ok){
+  const b = $('connBadge');
+  b.textContent = ok ? '接続済み' : '未接続';
+  b.className = 'conn ' + (ok ? 'ok' : 'off');
+  $('footNote').textContent = ok
+    ? 'Supabase に接続しています。表示しているのは承認済みデータのみです。'
+    : '未接続です。デモデータ（GSK・原文検証済み6件）を表示しています。';
+}
+
+/* =============================== 日付 =============================== */
+const DAY = 86400000;
+function toDate(s){
+  if (!s) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(s));
+  if (!m) return null;
+  const d = new Date(Date.UTC(+m[1], +m[2]-1, +m[3]));
+  return isNaN(d.getTime()) ? null : d;
+}
+function leadDays(r){
+  const a = toDate(r.announced_on), b = toDate(r.effective_on);
+  if (!a || !b) return null;
+  return Math.round((b - a) / DAY);
+}
+function leadLabel(n){
+  if (n === null) return '—';
+  if (n === 0) return '即日';
+  return n > 0 ? n + '日後' : Math.abs(n) + '日前';
+}
+
+/* =============================== 共通 =============================== */
+function esc(s){
+  return String(s === undefined || s === null ? '' : s)
+    .replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+const TYPES = ['就任','異動','退任','昇格'];
+const typeClass = t => TYPES.indexOf(t) >= 0 ? 'type-' + t : 'type-other';
+const dash = v => esc(v) || '—';
+
+/** Supabase の行を画面用に平坦化（companies(name) を company に） */
+function flatten(row){
+  const o = Object.assign({}, row);
+  o.company = row.company || (row.companies && row.companies.name) || '';
+  return o;
+}
+
+/* =============================== 読み込み =============================== */
+async function loadAll(){
+  if (!sb){
+    events = DEMO.slice();
+    companies = [];
+    pending = [];
+    renderAll();
+    return;
+  }
+  try {
+    const [ev, co] = await Promise.all([
+      sb.from('hr_events').select('*, companies(name)').eq('status','approved').order('effective_on',{ascending:false}),
+      sb.from('companies').select('*').order('name')
+    ]);
+    if (ev.error) throw ev.error;
+    events = (ev.data || []).map(flatten);
+    companies = co.error ? [] : (co.data || []);
+  } catch (e){
+    console.error('読み込みに失敗:', e);
+    alert('データの読み込みに失敗しました：' + (e.message || e));
+  }
+  await loadPending();
+  renderAll();
+}
+
+async function loadPending(){
+  if (!sb || !session){ pending = []; return; }
+  try {
+    const { data, error } = await sb.from('hr_events')
+      .select('*, companies(name)').eq('status','pending').order('created_at',{ascending:false});
+    if (error) throw error;
+    pending = (data || []).map(flatten);
+  } catch (e){
+    console.warn('レビュー待ちの読み込みに失敗:', e);
+    pending = [];
+  }
+}
+
+/* =============================== 一覧描画 =============================== */
+function filtered(){
+  const q = state.q.trim().toLowerCase();
+  return events.filter(r => {
+    if (state.co && r.company !== state.co) return false;
+    if (state.type && r.event_type !== state.type) return false;
+    if (state.rank && r.rank !== state.rank) return false;
+    if (!q) return true;
+    return ['company','person_name','old_title','new_title','old_dept','new_dept','rank']
+      .some(f => String(r[f] || '').toLowerCase().indexOf(q) >= 0);
+  });
+}
+
+function sorted(rows){
+  const k = state.sortKey, dir = state.sortDir === 'asc' ? 1 : -1;
+  return rows.slice().sort((a,b) => {
+    if (k === '_lead'){
+      const x = leadDays(a), y = leadDays(b);
+      return ((x === null ? -Infinity : x) - (y === null ? -Infinity : y)) * dir;
+    }
+    if (k === 'effective_on' || k === 'announced_on'){
+      const da = toDate(a[k]), db = toDate(b[k]);
+      return ((da ? da.getTime() : -Infinity) - (db ? db.getTime() : -Infinity)) * dir;
+    }
+    return String(a[k] || '').localeCompare(String(b[k] || ''), 'ja') * dir;
+  });
+}
+
+function renderList(){
+  const rows = sorted(filtered());
+  const tb = $('tbody');
+  tb.innerHTML = rows.map(r => {
+    const n = leadDays(r);
+    const link = r.source_url
+      ? ` <a href="${esc(r.source_url)}" target="_blank" rel="noopener" title="出典を開く">↗</a>` : '';
+    return '<tr>' +
+      '<td>' + dash(r.company) + '</td>' +
+      '<td class="name">' + dash(r.person_name) + link + '</td>' +
+      '<td>' + dash(r.old_title) + '</td>' +
+      '<td>' + dash(r.new_title) + '</td>' +
+      '<td>' + dash(r.rank) + '</td>' +
+      '<td>' + dash(r.effective_on) + '</td>' +
+      '<td>' + dash(r.announced_on) + '</td>' +
+      '<td class="days">' + leadLabel(n) + '</td>' +
+      '<td><span class="badge ' + typeClass(r.event_type) + '">' + dash(r.event_type) + '</span></td>' +
+    '</tr>';
+  }).join('');
+
+  $('emptyMsg').hidden = rows.length > 0;
+  $('rowCount').textContent = '（' + rows.length + ' / ' + events.length + ' 件）';
+
+  $$('thead th[data-key]').forEach(th => {
+    const on = th.dataset.key === state.sortKey;
+    th.classList.toggle('sorted', on);
+    const a = th.querySelector('.arrow');
+    if (a) a.textContent = on ? (state.sortDir === 'asc' ? '▲' : '▼') : '▲';
+  });
+
+  const cnt = t => events.filter(r => r.event_type === t).length;
+  $('statAll').textContent = events.length;
+  $('statIn').textContent  = cnt('就任');
+  $('statOut').textContent = cnt('退任');
+  $('statCo').textContent  = new Set(events.map(r => r.company).filter(Boolean)).size;
+  const ds = events.map(r => toDate(r.effective_on)).filter(Boolean).sort((a,b) => b - a);
+  $('statLatest').textContent = ds.length ? ds[0].toISOString().slice(0,10) : '—';
+
+  const uniq = a => Array.from(new Set(a.filter(Boolean))).sort((x,y) => x.localeCompare(y,'ja'));
+  const fill = (sel, vals, label, keep) => {
+    sel.innerHTML = '<option value="">' + label + '</option>' +
+      vals.map(v => '<option value="' + esc(v) + '"' + (v===keep?' selected':'') + '>' + esc(v) + '</option>').join('');
+  };
+  fill($('filterCo'),   uniq(events.map(r => r.company)),    '企業：すべて', state.co);
+  fill($('filterType'), uniq(events.map(r => r.event_type)), '種別：すべて', state.type);
+  fill($('filterRank'), uniq(events.map(r => r.rank)),       '階級：すべて', state.rank);
+}
+
+/* =============================== レビュー描画 =============================== */
+const REVIEW_FIELDS = [
+  ['person_name','人物名'], ['rank','階級'],
+  ['old_title','旧職位'], ['new_title','新職位'],
+  ['old_dept','旧部署'],  ['new_dept','新部署'],
+  ['effective_on','異動日'], ['announced_on','発表日']
+];
+
+function renderReview(){
+  const box = $('reviewList');
+  $('pendingCount').textContent = pending.length;
+  $('reviewCount').textContent = '（' + pending.length + ' 件）';
+
+  if (!sb){ box.innerHTML = '<p class="empty">Supabase に接続すると表示されます。</p>'; return; }
+  if (!session){ box.innerHTML = '<p class="empty">承認・却下にはログインが必要です。右上の「ログイン」から進んでください。</p>'; return; }
+  if (!pending.length){ box.innerHTML = '<p class="empty">レビュー待ちはありません。</p>'; return; }
+
+  box.innerHTML = pending.map(r => {
+    const fields = REVIEW_FIELDS.map(([k,label]) =>
+      '<div class="field"><label>' + label + '</label>' +
+      '<input data-id="' + r.id + '" data-f="' + k + '" value="' + esc(r[k]) + '"></div>'
+    ).join('');
+    const conf = r.confidence || 'medium';
+    return '<article class="review-card" data-card="' + r.id + '">' +
+      '<div class="review-head">' +
+        '<span class="badge ' + typeClass(r.event_type) + '">' + dash(r.event_type) + '</span>' +
+        '<strong>' + dash(r.company) + '</strong>' +
+        '<span class="conf conf-' + esc(conf) + '">確信度 ' + esc(conf) + '</span>' +
+      '</div>' +
+      '<blockquote class="quote">' + (esc(r.source_quote) || '（原文の抜粋が保存されていません）') + '</blockquote>' +
+      (r.source_url ? '<p class="src"><a href="' + esc(r.source_url) + '" target="_blank" rel="noopener">出典を開いて確認 ↗</a></p>' : '<p class="src warn">出典URLがありません</p>') +
+      '<div class="form-grid">' + fields + '</div>' +
+      '<div class="form-actions">' +
+        '<button class="btn btn-primary" data-approve="' + r.id + '">承認して一覧へ</button>' +
+        '<button class="btn btn-danger" data-reject="' + r.id + '">却下</button>' +
+        '<span class="form-msg" data-msg="' + r.id + '"></span>' +
+      '</div>' +
+    '</article>';
+  }).join('');
+}
+
+async function decide(id, status){
+  const card = document.querySelector('[data-card="' + id + '"]');
+  const msg  = document.querySelector('[data-msg="' + id + '"]');
+  const patch = { status, reviewed_at: new Date().toISOString() };
+
+  if (status === 'approved'){
+    card.querySelectorAll('input[data-f]').forEach(inp => {
+      const v = inp.value.trim();
+      patch[inp.dataset.f] = v === '' ? null : v;
+    });
+    if (!patch.person_name || !patch.effective_on){
+      msg.textContent = '人物名と異動日は必須です。'; msg.className = 'form-msg error'; return;
+    }
+  }
+  msg.textContent = '送信中…'; msg.className = 'form-msg';
+  const { error } = await sb.from('hr_events').update(patch).eq('id', id);
+  if (error){
+    msg.textContent = '失敗：' + error.message; msg.className = 'form-msg error'; return;
+  }
+  await loadAll();
+  switchView('review');
+}
+
+/* =============================== 企業マスタ描画 =============================== */
+function renderCompanies(){
+  const tb = $('coBody');
+  $('coCount').textContent = '（' + companies.length + ' 社）';
+  if (!companies.length){
+    tb.innerHTML = '<tr><td colspan="7" class="empty">Supabase に接続すると表示されます。</td></tr>';
+    return;
+  }
+  const ACCESS = { ok:['取得可','ok'], blocked:['取得不可','ng'], paywalled:['有料','warn'], unknown:['未確認','warn'] };
+  tb.innerHTML = companies.map(c => {
+    const [aLabel, aCls] = ACCESS[c.access_status] || ACCESS.unknown;
+    const rule = c.url_pattern
+      ? '<code>' + esc(c.url_pattern) + '</code>'
+      : (c.link_text_pattern ? 'リンク文言: <code>' + esc(c.link_text_pattern) + '</code>' : '—');
+    const lnk = (u, t) => u ? '<a href="' + esc(u) + '" target="_blank" rel="noopener">' + t + ' ↗</a>' : '—';
+    return '<tr' + (c.enabled ? '' : ' class="disabled"') + '>' +
+      '<td class="name">' + dash(c.name) + '</td>' +
+      '<td><span class="access ' + aCls + '">' + aLabel + '</span></td>' +
+      '<td>' + dash(c.content_format) + '</td>' +
+      '<td class="rule">' + rule + '</td>' +
+      '<td>' + (c.last_crawled_at ? esc(String(c.last_crawled_at).slice(0,10)) : '<span class="never">未巡回</span>') + '</td>' +
+      '<td>' + lnk(c.press_url, 'NR') + '</td>' +
+      '<td>' + lnk(c.leadership_url, '組織概要') + '</td>' +
+    '</tr>';
+  }).join('');
+}
+
+function renderAll(){ renderList(); renderReview(); renderCompanies(); applyGate(); }
+
+/** ログインリンク送信（ヘッダーの認証欄と、未ログイン案内の両方で使う） */
+async function sendMagicLink(email, msgEl){
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){
+    msgEl.textContent = 'メールアドレスの形式が違います。'; msgEl.className = 'form-msg error'; return;
+  }
+  if (!sb){ msgEl.textContent = '先に「接続設定」を行ってください。'; msgEl.className = 'form-msg error'; return; }
+  msgEl.textContent = '送信中…'; msgEl.className = 'form-msg';
+  const { error } = await sb.auth.signInWithOtp({ email, options:{ emailRedirectTo: location.origin + location.pathname } });
+  msgEl.textContent = error ? ('失敗：' + error.message) : 'ログインリンクを送りました。メールをご確認ください。';
+  msgEl.className = 'form-msg' + (error ? ' error' : '');
+}
+
+/* =============================== 画面切替 =============================== */
+/** 未ログインならデータ画面を隠し、ログイン案内だけを見せる */
+function applyGate(){
+  const locked = !!sb && !session;   // 接続済みだが未ログイン
+  $('gatePanel').hidden = !locked;
+  document.querySelector('.tabs').hidden = locked;
+  if (locked){
+    ['list','review','companies'].forEach(x => { $('view-' + x).hidden = true; });
+  } else {
+    switchView(view);
+  }
+}
+
+function switchView(v){
+  view = v;
+  $$('.tab').forEach(t => t.classList.toggle('active', t.dataset.view === v));
+  if (!!sb && !session) return;      // ロック中は何も表示しない
+  ['list','review','companies'].forEach(x => { $('view-' + x).hidden = (x !== v); });
+}
+$$('.tab').forEach(t => t.addEventListener('click', () => switchView(t.dataset.view)));
+
+/* =============================== イベント =============================== */
+$$('thead th[data-key]').forEach(th => th.addEventListener('click', () => {
+  const k = th.dataset.key;
+  if (state.sortKey === k) state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
+  else { state.sortKey = k; state.sortDir = /_on$|_lead/.test(k) ? 'desc' : 'asc'; }
+  renderList();
+}));
+
+$('q').addEventListener('input', e => { state.q = e.target.value; renderList(); });
+$('filterCo').addEventListener('change', e => { state.co = e.target.value; renderList(); });
+$('filterType').addEventListener('change', e => { state.type = e.target.value; renderList(); });
+$('filterRank').addEventListener('change', e => { state.rank = e.target.value; renderList(); });
+$('resetFilter').addEventListener('click', () => {
+  state.q = state.co = state.type = state.rank = '';
+  $('q').value = ''; renderList();
+});
+
+$('reviewList').addEventListener('click', e => {
+  const ap = e.target.closest('[data-approve]');
+  const rj = e.target.closest('[data-reject]');
+  if (ap) decide(ap.dataset.approve, 'approved');
+  if (rj && confirm('この候補を却下します。よろしいですか？')) decide(rj.dataset.reject, 'rejected');
+});
+
+/* --- 設定 --- */
+$('settingsBtn').addEventListener('click', () => {
+  const p = $('setupPanel');
+  p.hidden = !p.hidden;
+  if (!p.hidden){
+    const c = readConfig();
+    if (c){ $('cfgUrl').value = c.url || ''; $('cfgKey').value = c.anonKey || ''; }
+  }
+});
+$('cfgSave').addEventListener('click', async () => {
+  const url = $('cfgUrl').value.trim(), anonKey = $('cfgKey').value.trim();
+  const msg = $('cfgMsg');
+  if (!/^https:\/\/.+\.supabase\.co\/?$/.test(url)){
+    msg.textContent = 'Project URL の形式が違います。'; msg.className = 'form-msg error'; return;
+  }
+  // service_role キーは payload に "service_role" を含む。ブラウザに置かせない
+  try {
+    const body = JSON.parse(atob(anonKey.split('.')[1] || ''));
+    if (body.role && body.role !== 'anon'){
+      msg.textContent = 'これは ' + body.role + ' キーです。anon public キーを入れてください。';
+      msg.className = 'form-msg error'; return;
+    }
+  } catch (e){ /* 解析できない形式は素通し */ }
+  try { localStorage.setItem(CFG_KEY, JSON.stringify({url, anonKey})); }
+  catch (e){ msg.textContent = '保存に失敗しました。'; msg.className = 'form-msg error'; return; }
+  msg.textContent = '保存しました。接続します…'; msg.className = 'form-msg';
+  if (initClient()){ await restoreSession(); await loadAll(); $('setupPanel').hidden = true; }
+});
+$('cfgClear').addEventListener('click', () => {
+  try { localStorage.removeItem(CFG_KEY); } catch (e){}
+  location.reload();
+});
+
+/* --- 認証 --- */
+$('authBtn').addEventListener('click', async () => {
+  if (session){
+    if (!confirm('ログアウトしますか？')) return;
+    await sb.auth.signOut();
+    session = null; setAuthUI(); await loadAll(); return;
+  }
+  if (!sb){ alert('先に「接続設定」で Supabase に接続してください。'); return; }
+  $('authPanel').hidden = !$('authPanel').hidden;
+});
+$('authSend').addEventListener('click', () => sendMagicLink($('authEmail').value.trim(), $('authMsg')));
+$('gateSend').addEventListener('click', () => sendMagicLink($('gateEmail').value.trim(), $('gateMsg')));
+$('gateEmail').addEventListener('keydown', e => { if (e.key === 'Enter') $('gateSend').click(); });
+
+function setAuthUI(){
+  const btn = $('authBtn');
+  if (session){
+    btn.textContent = 'ログアウト';
+    $('authPanel').hidden = true;
+    $('subtitle').textContent = 'ログイン中：' + (session.user && session.user.email || '');
+  } else {
+    btn.textContent = 'ログイン';
+    $('subtitle').textContent = '複数社の公式発表から経営層・管理職以上の異動を集約';
+  }
+}
+
+async function restoreSession(){
+  if (!sb) return;
+  try {
+    const { data } = await sb.auth.getSession();
+    session = data ? data.session : null;
+  } catch (e){ session = null; }
+  setAuthUI();
+  if (sb) sb.auth.onAuthStateChange(async (_e, s) => {
+    session = s; setAuthUI(); await loadAll();
+  });
+}
+
+/* --- エクスポート --- */
+const EXPORT_COLS = ['company','person_name','old_title','old_dept','new_title','new_dept','rank','effective_on','announced_on','event_type','source_url','source_quote'];
+function download(name, text, mime){
+  const blob = new Blob(['﻿' + text], { type: mime + ';charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = Object.assign(document.createElement('a'), { href:url, download:name });
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+const stamp = () => new Date().toISOString().slice(0,10);
+$('exportCsv').addEventListener('click', () => {
+  const q = v => { const s = String(v == null ? '' : v); return /[",\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s; };
+  const rows = sorted(filtered());
+  const csv = [EXPORT_COLS.join(',')].concat(rows.map(r => EXPORT_COLS.map(c => q(r[c])).join(','))).join('\n');
+  download('hr_' + stamp() + '.csv', csv, 'text/csv');
+});
+$('exportJson').addEventListener('click', () => {
+  const rows = sorted(filtered()).map(r => {
+    const o = {}; EXPORT_COLS.forEach(c => o[c] = r[c]);
+    o.経過日数 = leadDays(r);
+    return o;
+  });
+  download('hr_' + stamp() + '.json',
+    JSON.stringify({ 出力日時:new Date().toISOString(), 件数:rows.length, records:rows }, null, 2),
+    'application/json');
+});
+
+/* --- テーマ --- */
+function applyTheme(t){
+  document.documentElement.setAttribute('data-theme', t);
+  $('themeToggle').textContent = t === 'dark' ? '☀️' : '🌙';
+  try { localStorage.setItem(THEME_KEY, t); } catch (e){}
+}
+$('themeToggle').addEventListener('click', () =>
+  applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'));
+(function(){
+  let t = null;
+  try { t = localStorage.getItem(THEME_KEY); } catch (e){}
+  applyTheme(t || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
+})();
+
+/* --- 起動 --- */
+(async function main(){
+  if (initClient()) await restoreSession();
+  else $('setupPanel').hidden = false;
+  await loadAll();
+})();
+</script>
+</body>
+</html>
