@@ -41,6 +41,15 @@ function Protect-Secret {
     return $Text.Replace($Secret, '***REDACTED***')
 }
 
+# PowerShell では @($null).Count が 1 になるため、素朴に @() で包むと
+# 「0件」を「1件」と誤判定する。行の取得は必ずこの関数を通すこと。
+function Get-SupabaseRows {
+    param([hashtable]$Cfg, [Parameter(Mandatory=$true)][string]$Path)
+    $r = Invoke-Supabase -Cfg $Cfg -Path $Path
+    if ($null -eq $r) { return @() }
+    return @($r | Where-Object { $null -ne $_ })
+}
+
 function Invoke-Supabase {
     param(
         [hashtable]$Cfg,
