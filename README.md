@@ -2,7 +2,7 @@
 
 製薬各社の**公式発表**から、経営層・管理職以上の人事異動を収集・整理して一覧できるようにしたものです。
 
-公開URL: `https://<ユーザー名>.github.io/hr-tracker/`
+公開URL: <https://mfumiya1811-glitch.github.io/hr-tracker/>
 （閲覧にはログインが必要です）
 
 ## 何ができるか
@@ -15,15 +15,13 @@
 
 ## 収集対象
 
-| 企業 | 状態 | 形式 | 備考 |
-|---|---|---|---|
-| グラクソ・スミスクライン | 対象 | HTML | URLが `/YYYYMMDD-hr/` で規則的 |
-| 第一三共 | 対象 | PDF | リンク文言で判定。`pdftotext -table` で抽出 |
-| エーザイ | 対象 | HTML | 人事表が最も充実 |
-| 中外製薬 | 対象 | HTML | — |
-| 塩野義製薬 | 対象 | HTML | 年1回程度 |
-| 武田薬品工業 | 対象外 | — | 一覧がJavaScript描画で取得できず |
-| アステラス製薬 | 対象外 | — | 人事記事の所在が未特定 |
+| 企業 | 形式 | 備考 |
+|---|---|---|
+| グラクソ・スミスクライン | HTML | URLが `/YYYYMMDD-hr/` で規則的。取締役級のみ |
+| 第一三共 | PDF | リンク文言で判定。`pdftotext -table` で抽出。人事プレスが最多 |
+| 中外製薬 | HTML | 役員・参与・基本組織長を公開 |
+| アムジェン | HTML | 日本語プレスが少なく人事記事なし。役員一覧の差分頼み |
+| 旭化成セラピューティクス | PDF | 親会社の旭化成グループ全体プレスから該当節を抽出 |
 
 **対象外としたソース**
 
@@ -31,6 +29,8 @@
 - LinkedIn … robots.txt が自動アクセスを明示的に禁止。加えて個人情報
 - 日刊薬業 … 冒頭のみ無料で以降は会員限定（有料購読）
 - 官報 … 株式会社の役員変更は商業登記簿であり官報には載らない
+- 武田薬品工業 … 一覧が JavaScript 描画で取得できず（robots.txt 上は許可）
+- アステラス製薬 … 人事記事の所在が未特定
 
 ## データの扱い方（重要）
 
@@ -50,13 +50,22 @@ config.example.js               その見本
 schema.sql                      DBの初期構築
 schema-02-login-required.sql    閲覧をログイン必須にする変更
 
+RUNBOOK.md                      毎月の巡回手順（運用はこれを見る）
 start.ps1                       ローカルで画面を開く
 setup.ps1                       初回セットアップ
 test-connection.ps1             接続確認
+add-company.ps1                 企業を追加
+remove-company.ps1              企業を削除
+publish.ps1                     GitHub へ公開
 lib.ps1                         共通処理（.env 読み込み・API呼び出し）
 
 .env                            秘密キー（Git管理外）
+backup/                         削除した企業の退避先（Git管理外）
 ```
+
+## 巡回の手順
+
+毎月の運用は **[RUNBOOK.md](RUNBOOK.md)** を参照してください。
 
 ## ローカルで動かす
 
@@ -64,7 +73,7 @@ lib.ps1                         共通処理（.env 読み込み・API呼び出�
 powershell -NoProfile -ExecutionPolicy Bypass -File start.ps1
 ```
 
-`http://localhost:3000` で開きます。
+`http://localhost:4321` で開きます。
 `index.html` を直接ダブルクリックしないでください。`file://` ではログインが戻ってきません。
 
 ## セキュリティ
